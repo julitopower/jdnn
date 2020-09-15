@@ -50,12 +50,11 @@ class CrossEntropy : public Layer {
 
   // Assumes Y is one hos encoded
   float loss(m::Tensor& X, m::Tensor& Y) override {
-    std::size_t idx = 0;
     float loss = 0.0;
-    for (auto offset = 0 ; offset < Y.rows() * Y.cols() ; offset += Y.cols()) {
+    for (auto offset = 0 ; offset < X.rows() * X.cols() ; offset += X.cols()) {
       // Find the index of the class from the ground truth
       const auto begin = Y.data() + offset;
-      idx = std::find(begin, begin + Y.cols(), 1.0) - begin;
+      const auto idx = std::find(begin, begin + Y.cols(), 1.0) - begin;
 
       // Accumulate the loss for the batch
       loss -= log2f(X.data()[offset + idx]);
@@ -79,15 +78,16 @@ auto Relu = [](m::Tensor& in, m::Tensor& out) -> auto {
 auto Softmax = [](m::Tensor& in, m::Tensor& out) -> auto {
                  std::vector<float> exp(in.cols());
                  for (auto offset = 0 ; offset < in.rows() * in.cols() ; offset += in.cols()) {
-                   std::transform(in.data() + offset, in.data() + offset + in.cols(), std::begin(exp),
-                                  [](float a) -> auto {
-                                    return std::exp(a);
+                   const auto init = in.data() + offset;
+                   const auto end = init + in.cols();
+                   const auto max_value = *std::max_element(init, end);
+                   std::transform(init, end, std::begin(exp),
+                                  [max_value](const float a) -> auto {
+                                    return std::exp(a * (1 / max_value) - 1);
                                   });
                    const auto sum = std::accumulate(exp.begin(), exp.end(), 0.0f);
                    std::transform(exp.begin(), exp.end(), out.data() + offset,
-                                  [sum](float a) -> auto {
-                                    return a * 1/sum;
-                                  });
+                                  [sum](float a) -> auto { return a * (1 / sum); });
                  }
                };
 
@@ -136,11 +136,9 @@ class DenseLayer : public Layer {
     if (activation_function_) {
       afn_(z_, a_);
     }
-    std::cout << a_ << std::endl;
   }
 
   void backward(m::Tensor& grad_in, m::Tensor& in, m::Tensor& grad_out) override {
-    std::cout << "Backward through dense layer" << std::endl;
   }
 
   m::Tensor& output() override {
@@ -192,9 +190,7 @@ class NN {
     // Initialized with the dimensions of the network output
     auto grad_out = std::make_unique<m::Tensor>(Y.rows(), Y.cols());
     if (loss_) {
-      std::cout << "Loss: " << loss_->loss(layers_shared_.back()->output(), Y) << std::endl;
       loss_->backward(Y, layers_shared_.back()->output(), *grad_out);
-      std::cout << *grad_out << std::endl;
     } else {
       return;
     }
@@ -215,7 +211,6 @@ class NN {
         grad_out = std::make_unique<m::Tensor>(X.rows(), X.cols());
         (*it)->backward(*grad_in, X, *grad_out);
       }
-      std::cout << *grad_out << std::endl;
     }
 
 
