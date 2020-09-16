@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdarg>
 #include <iostream>
 #include <vector>
@@ -7,9 +9,6 @@
 #include "matrix.hpp"
 
 namespace nn {
-
-using Shape = std::vector<std::size_t>;
-using ActivationFunction = std::function<void(m::Tensor&, m::Tensor&)>;
 
 /*! \brief Base class for all layers of a neural network */
 class Layer {
@@ -67,29 +66,85 @@ class CrossEntropy : public Layer {
   }
 };
 
-// TODO: This needs to be reworked. Activation functions need to be able to
-// be part of the back propagation, for which we need their derivatives
-// Relu activation function
-auto Relu = [](m::Tensor& in, m::Tensor& out) -> auto {
-              std::transform(in.data(), in.data() + in.rows() * in.cols(), out.data(),
-                             [](float a) { return std::max(0.0f, a); });
-            };
+class ReluLayer : public Layer {
+ public:
+  ReluLayer(std::size_t batch_size,
+	    std::size_t input_dim) : a_{batch_size, input_dim} {}
+  
+  virtual ~ReluLayer() {};
 
-auto Softmax = [](m::Tensor& in, m::Tensor& out) -> auto {
-                 std::vector<float> exp(in.cols());
-                 for (auto offset = 0 ; offset < in.rows() * in.cols() ; offset += in.cols()) {
-                   const auto init = in.data() + offset;
-                   const auto end = init + in.cols();
-                   const auto max_value = *std::max_element(init, end);
-                   std::transform(init, end, std::begin(exp),
-                                  [max_value](const float a) -> auto {
-                                    return std::exp(a * (1 / max_value) - 1);
-                                  });
-                   const auto sum = std::accumulate(exp.begin(), exp.end(), 0.0f);
-                   std::transform(exp.begin(), exp.end(), out.data() + offset,
-                                  [sum](float a) -> auto { return a * (1 / sum); });
-                 }
-               };
+  // Not implemented for loss functions
+  void forward(m::Tensor& X) override {
+    std::transform(X.data(), X.data() + X.rows() * X.cols(), a_.data(),
+                   [](float a) { return std::max(0.0f, a); });
+    std::cout << a_ << std::endl;
+  }
+
+  // grad_in: Tensor. Labels
+  // in: Tensor. the output of the network
+  // grad_out: Tensor. The gradient resulting from this layer
+  void backward(m::Tensor& grad_in, m::Tensor& in, m::Tensor& grad_out) override {}
+
+  m::Tensor& output() override {
+    return a_;
+  };
+
+  // Assumes Y is one hos encoded
+  float loss(m::Tensor& X, m::Tensor& Y) override {
+  }
+
+  static std::shared_ptr<Layer> newLayer(std::size_t batch_size, std::size_t input_dim) {
+    return std::make_shared<ReluLayer>(batch_size, input_dim);
+  }
+
+private:
+  m::Tensor a_;                 // Activation value  
+};
+
+class SoftmaxLayer : public Layer {
+ public:
+  SoftmaxLayer(std::size_t batch_size,
+	    std::size_t input_dim) : a_{batch_size, input_dim} {}
+  
+  virtual ~SoftmaxLayer() {};
+
+  // Not implemented for loss functions
+  void forward(m::Tensor& X) override {
+    std::vector<float> exp(X.cols());
+    for (auto offset = 0 ; offset < X.rows() * X.cols() ; offset += X.cols()) {
+      const auto init = X.data() + offset;
+      const auto end = init + X.cols();
+      const auto max_value = *std::max_element(init, end);
+      std::transform(init, end, std::begin(exp),
+                     [max_value](const float a) -> auto {
+                       return std::exp(a * (1 / max_value) - 1);
+                     });
+      const auto sum = std::accumulate(exp.begin(), exp.end(), 0.0f);
+      std::transform(exp.begin(), exp.end(), a_.data() + offset,
+                     [sum](float a) -> auto { return a * (1 / sum); });
+    }
+  }
+
+  // grad_in: Tensor. Labels
+  // in: Tensor. the output of the network
+  // grad_out: Tensor. The gradient resulting from this layer
+  void backward(m::Tensor& grad_in, m::Tensor& in, m::Tensor& grad_out) override {}
+
+  m::Tensor& output() override {
+    return a_;
+  };
+
+  // Assumes Y is one hos encoded
+  float loss(m::Tensor& X, m::Tensor& Y) override {
+  }
+
+  static std::shared_ptr<Layer> newLayer(std::size_t batch_size, std::size_t input_dim) {
+    return std::make_shared<SoftmaxLayer>(batch_size, input_dim);
+  }
+
+private:
+  m::Tensor a_;                 // Activation value  
+};
 
 
 class DenseLayer : public Layer {
@@ -104,20 +159,10 @@ class DenseLayer : public Layer {
    */
   DenseLayer(std::size_t batch_size,
              std::size_t input_dim,
-             std::size_t output_dim,
-             bool activation_function = false) : w_{input_dim, output_dim},
-                                                b_{1, output_dim},
-                                                z_{batch_size, output_dim},
-                                                a_{batch_size, output_dim},
-                                                activation_function_{activation_function} {}
-
-  DenseLayer(std::size_t batch_size,
-             std::size_t input_dim,
-             std::size_t output_dim,
-             ActivationFunction activation_function) :
-      DenseLayer(batch_size, input_dim, output_dim, true) {
-    afn_ = activation_function;
-  }
+             std::size_t output_dim) : w_{input_dim, output_dim},
+                                       b_{1, output_dim},
+                                       z_{batch_size, output_dim}  {}
+  
 
   virtual ~DenseLayer() {}
 
@@ -132,39 +177,27 @@ class DenseLayer : public Layer {
       std::transform(init, init +  z_.cols(), b_.data(), init,
                      [](float a, float b) { return a + b; });
     }
-    // Apply relu by default
-    if (activation_function_) {
-      afn_(z_, a_);
-    }
+
+    std::cout << z_ << std::endl;
   }
 
   void backward(m::Tensor& grad_in, m::Tensor& in, m::Tensor& grad_out) override {
   }
 
   m::Tensor& output() override {
-    return a_;
+    return z_;
   }
 
   static std::shared_ptr<Layer> newLayer(std::size_t batch_size,
                                          std::size_t input_dim,
                                          std::size_t output_dim) {
-    return std::make_shared<DenseLayer>(batch_size,input_dim, output_dim, false);
-  }
-
-  static std::shared_ptr<Layer> newLayer(std::size_t batch_size,
-                                         std::size_t input_dim,
-                                         std::size_t output_dim,
-                                         ActivationFunction activation_function) {
-    return std::make_shared<DenseLayer>(batch_size, input_dim, output_dim, activation_function);
+    return std::make_shared<DenseLayer>(batch_size,input_dim, output_dim);
   }
 
  private:
   m::Tensor w_;                 // Weights
   m::Tensor b_;                 // Bias
   m::Tensor z_;                 // Value after linear combination
-  m::Tensor a_;                 // Activation value
-  bool activation_function_;    // Wheter there is an activation function for this layer
-  ActivationFunction afn_;      // Activation function
 };
 
 
