@@ -16,7 +16,8 @@ class Matrix {
       data_{new T[nrows * ncols]}, nrows_{nrows}, ncols_{ncols} {
         // By default initialize the matrix with random values
         std::default_random_engine generator;
-        generator.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        //        generator.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        //generator.seed(424);
         std::uniform_real_distribution<float> distribution{-1.0, 1.0};
         for(auto i = 0 ; i < nrows * ncols ; ++i) {
           data_[i] = distribution(generator);
@@ -31,7 +32,7 @@ class Matrix {
   T* data() { return data_; }
   const T* cdata() const { return data_; }
 
-  void data(const T*d) {
+  void data(const T* d) {
     std::memcpy(data_, d, sizeof(T) * ncols_ * nrows_);
   }
 
