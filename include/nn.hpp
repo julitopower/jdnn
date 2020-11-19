@@ -17,6 +17,13 @@ class Layer {
  public:
   virtual ~Layer(){};
 
+  // We don't want to pass the batch size to each layer at
+  // creation time. Instead we have this method that is
+  // invoked by the NN that contains this layers, to initialize
+  // whatever memory is dependent on the batch_size
+  virtual void init(std::size_t batch_size) {}
+
+  // Forward pass. All layers must implement
   virtual void forward(m::Tensor& X) = 0;
 
   // grad_in: Tensor. Gradient coming from the "right"
@@ -106,8 +113,12 @@ class MSE : public Layer {
 
 class ReluLayer : public Layer {
  public:
-  ReluLayer(std::size_t batch_size,
-            std::size_t input_dim) : a_{batch_size, input_dim} {}
+  ReluLayer(std::size_t input_dim) : a_{}, input_dim_{input_dim} {}
+
+  
+  void init(std::size_t batch_size) override {
+    a_.resize(batch_size, input_dim_);
+  }
   
   virtual ~ReluLayer() {};
 
@@ -138,18 +149,19 @@ class ReluLayer : public Layer {
   float loss(m::Tensor& X, m::Tensor& Y) override {
   }
 
-  static std::shared_ptr<Layer> newLayer(std::size_t batch_size, std::size_t input_dim) {
-    return std::make_shared<ReluLayer>(batch_size, input_dim);
+  static std::shared_ptr<Layer> newLayer(std::size_t input_dim) {
+    return std::make_shared<ReluLayer>(input_dim);
   }
 
 private:
-  m::Tensor a_;                 // Activation value  
+  m::Tensor a_;                 // Activation value
+  std::size_t input_dim_;
 };
 
 class SoftmaxLayer : public Layer {
  public:
   SoftmaxLayer(std::size_t batch_size,
-	    std::size_t input_dim) : a_{batch_size, input_dim} {}
+      std::size_t input_dim) : a_{batch_size, input_dim} {}
   
   virtual ~SoftmaxLayer() {};
 
@@ -204,14 +216,17 @@ class DenseLayer : public Layer {
 
     Note: We can probably tuck the biases in the w_ matrix by adding an extra row
    */
-  DenseLayer(std::size_t batch_size,
-             std::size_t input_dim,
+  DenseLayer(std::size_t input_dim,
              std::size_t output_dim) : w_{input_dim, output_dim},
                                        wg_{input_dim, output_dim},
                                        b_{1, output_dim},
                                        bg_{1, output_dim},
-                                       z_{batch_size, output_dim}  {}
-  
+                                       z_{}  {}
+
+
+  void init(std::size_t batch_size) override {
+    z_.resize(batch_size, w_.cols());
+  }
 
   virtual ~DenseLayer() {}
 
@@ -264,10 +279,9 @@ class DenseLayer : public Layer {
     return z_;
   }
 
-  static std::shared_ptr<Layer> newLayer(std::size_t batch_size,
-                                         std::size_t input_dim,
+  static std::shared_ptr<Layer> newLayer(std::size_t input_dim,
                                          std::size_t output_dim) {
-    return std::make_shared<DenseLayer>(batch_size,input_dim, output_dim);
+    return std::make_shared<DenseLayer>(input_dim, output_dim);
   }
   
  private:
@@ -281,7 +295,12 @@ class DenseLayer : public Layer {
 
 class NN {
  public:
-  NN(std::vector<std::shared_ptr<Layer>>&& layers) : layers_shared_{std::move(layers)}{}
+  NN(std::vector<std::shared_ptr<Layer>>&& layers, std::size_t batch_size) : layers_shared_{std::move(layers)}{
+    for (auto& layer : layers_shared_) {
+      layer->init(batch_size);
+    }
+  }
+  
   void addLoss(std::shared_ptr<Layer> loss) {
     loss_ = loss;
   }

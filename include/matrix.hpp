@@ -17,17 +17,28 @@ class Matrix {
         // By default initialize the matrix with random values
         std::default_random_engine generator;
         //        generator.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        //generator.seed(424);
+        generator.seed(424);
         std::uniform_real_distribution<float> distribution{-1.0, 1.0};
         for(auto i = 0 ; i < nrows * ncols ; ++i) {
           data_[i] = distribution(generator);
         }
       }
 
+  Matrix() : nrows_{0}, ncols_{0} {}
+
   Matrix(const Matrix& m) = delete;
   ~Matrix() {
     delete[] data_;
   }
+
+  void resize(std::size_t rows, std::size_t cols) {
+    if (data_ != nullptr) {
+      delete[] data_;
+    }
+    data_ = new T[rows * cols];
+    nrows_ = rows;
+    ncols_ = cols;
+  } 
 
   T* data() { return data_; }
   const T* cdata() const { return data_; }
@@ -47,9 +58,9 @@ class Matrix {
   friend std::ostream &operator<<(std::ostream& os, const Matrix<K>& m);
   
  private:
-  T* data_;
-  const std::size_t nrows_;
-  const std::size_t ncols_;
+  T* data_ = nullptr;
+  std::size_t nrows_;
+  std::size_t ncols_;
 };
 
 template <typename T>
